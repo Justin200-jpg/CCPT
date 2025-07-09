@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Price Tracker</title>
+    <!--
+        Load Tailwind CSS from CDN for modern, responsive styling.
+        Tailwind provides utility classes to rapidly build UI components.
+    -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /*
+            Custom CSS for the Inter font and basic body styling.
+            Tailwind CSS handles most other layout and component styling.
+        */
+        body {
+            font-family: "Inter", sans-serif; /* Set the font for the entire page */
+            margin: 0; /* Remove default body margin */
+            padding: 0; /* Remove default body padding */
+            background-color: #e2e8f0; /* Light gray background */
+            color: #334155; /* Default text color */
+        }
+
+        /* Styles for positive (green) and negative (red) price changes */
+        .price-change-positive {
+            color: #10b981; /* Tailwind green-500 */
+        }
+        .price-change-negative {
+            color: #ef4444; /* Tailwind red-500 */
+        }
+
+        /* Basic scrollbar styling for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #cbd5e1; /* Light gray track */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #64748b; /* Medium gray thumb */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569; /* Darker gray on hover */
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+    <!-- Header Section -->
+    <header class="bg-gradient-to-r from-purple-700 to-indigo-800 text-white p-6 shadow-lg">
+        <div class="container mx-auto text-center">
+            <h1 class="text-4xl font-extrabold mb-2">Live Crypto Prices</h1>
+            <p class="text-lg font-light opacity-90">Powered by CoinGecko API</p>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="container mx-auto px-4 py-8 flex-grow">
+        <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Top Cryptocurrencies</h2>
+                <button id="refreshButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
+                    Refresh Prices
+                </button>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loadingIndicator" class="text-center py-8">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mx-auto mb-4"></div>
+                <p class="text-gray-600 text-lg">Fetching live data...</p>
+            </div>
+
+            <!-- Cryptocurrency List/Cards -->
+            <div id="cryptoList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+                <!-- Crypto cards will be injected here by JavaScript -->
+            </div>
+
+            <!-- Last Updated Timestamp -->
+            <p id="lastUpdated" class="text-sm text-gray-500 mt-6 text-right hidden">Last updated: --</p>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative hidden" role="alert">
+                <strong class="font-bold">Error!</strong>
+                <span class="block sm:inline" id="errorText">Something went wrong while fetching data. Please try again later.</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Section -->
+    <footer class="bg-gray-800 text-white p-4 text-center mt-8">
+        <div class="container mx-auto">
+            <p class="text-sm">&copy; 2025 Liapard Development Team. All rights reserved.</p>
+            <p class="text-xs mt-1 opacity-75">Data provided by CoinGecko API.</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript for fetching and displaying crypto prices -->
+    <script>
+        // Get references to HTML elements
+        const cryptoListDiv = document.getElementById('cryptoList');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const lastUpdatedSpan = document.getElementById('lastUpdated');
+        const errorMessageDiv = document.getElementById('errorMessage');
+        const errorTextSpan = document.getElementById('errorText');
+        const refreshButton = document.getElementById('refreshButton');
+
+        // Define the cryptocurrencies we want to track
+        // The 'ids' correspond to CoinGecko's internal IDs for these coins.
+        // I've expanded this list significantly!
+        const cryptoIds = [
+            'bitcoin', 'ethereum', 'ripple', 'litecoin', 'cardano',
+            'solana', 'dogecoin', 'polkadot', 'chainlink', 'polygon',
+            'binancecoin', 'usd-coin', 'tether', 'avalanche-2', 'shiba-inu',
+            'tron', 'cosmos', 'near-protocol', 'monero', 'stellar',
+            'ethereum-classic', 'vechain', 'internet-computer', 'filecoin', 'elrond-egld',
+            'hedera-hashgraph', 'tezos', 'decentraland', 'the-sandbox', 'axie-infinity',
+            'aave', 'uniswap', 'maker', 'dai', 'compound-governance-token',
+            'wrapped-bitcoin', 'binance-usd', 'algorand', 'fantom', 'eos',
+            'dash', 'zcash', 'neo', 'iota', 'nem',
+            'qtum', 'ontology', 'waves', 'chiliz', 'theta-token',
+            'pancakeswap-token', 'sushi', 'curve-dao-token', 'yearn-finance', 'basic-attention-token'
+        ];
+        const vsCurrency = 'usd'; // The currency to compare against
+
+        // CoinGecko API endpoint for simple price data
+        // include_24hr_change and include_24hr_vol are optional parameters for more data
+        const API_URL = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoIds.join(',')}&vs_currencies=${vsCurrency}&include_24hr_change=true&include_24hr_vol=true`;
+
+        /**
+         * Fetches cryptocurrency data from the CoinGecko API and updates the UI.
+         */
+        async function fetchCryptoPrices() {
+            // Show loading indicator and hide previous content/errors
+            loadingIndicator.classList.remove('hidden');
+            cryptoListDiv.classList.add('hidden');
+            lastUpdatedSpan.classList.add('hidden');
+            errorMessageDiv.classList.add('hidden');
+            cryptoListDiv.innerHTML = ''; // Clear previous crypto cards
+
+            try {
+                // Fetch data from the API
+                const response = await fetch(API_URL);
+
+                // Check if the response was successful (status code 200-299)
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`API error: ${response.status} ${response.statusText} - ${errorData.error || 'Unknown error'}`);
+                }
+
+                // Parse the JSON response
+                const data = await response.json();
+
+                // Check if data is empty or malformed
+                if (Object.keys(data).length === 0) {
+                    throw new Error('No data received from the API. It might be a temporary issue or invalid cryptocurrency IDs.');
+                }
+
+                // Iterate over the data and create a card for each cryptocurrency
+                cryptoIds.forEach(id => {
+                    const cryptoData = data[id];
+                    if (cryptoData) {
+                        const price = cryptoData[vsCurrency];
+                        const change24h = cryptoData[`${vsCurrency}_24h_change`];
+                        const volume24h = cryptoData[`${vsCurrency}_24h_vol`];
+
+                        // Determine color for price change
+                        const changeClass = change24h >= 0 ? 'price-change-positive' : 'price-change-negative';
+                        const changeArrow = change24h >= 0 ? '▲' : '▼'; // Up or down arrow
+
+                        // Format numbers for display
+                        const formattedPrice = price.toLocaleString(undefined, { style: 'currency', currency: vsCurrency.toUpperCase() });
+                        const formattedChange = change24h ? `${changeArrow} ${Math.abs(change24h).toFixed(2)}%` : 'N/A';
+                        const formattedVolume = volume24h ? volume24h.toLocaleString(undefined, { style: 'currency', currency: vsCurrency.toUpperCase(), maximumFractionDigits: 0 }) : 'N/A';
+
+                        // Create the HTML for a crypto card
+                        const cryptoCard = `
+                            <div class="bg-gray-50 p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300">
+                                <h3 class="text-xl font-semibold text-purple-700 mb-2 capitalize">${id} (${id.substring(0, 3).toUpperCase()})</h3>
+                                <p class="text-3xl font-bold text-gray-900 mb-2">${formattedPrice}</p>
+                                <p class="text-sm ${changeClass} font-medium mb-1">24h Change: ${formattedChange}</p>
+                                <p class="text-sm text-gray-600">24h Volume: ${formattedVolume}</p>
+                            </div>
+                        `;
+                        cryptoListDiv.innerHTML += cryptoCard;
+                    } else {
+                        console.warn(`Data not found for cryptocurrency ID: ${id}`);
+                    }
+                });
+
+                // Update last updated timestamp
+                const now = new Date();
+                lastUpdatedSpan.textContent = `Last updated: ${now.toLocaleTimeString()} on ${now.toLocaleDateString()}`;
+
+                // Hide loading indicator and show content
+                loadingIndicator.classList.add('hidden');
+                cryptoListDiv.classList.remove('hidden');
+                lastUpdatedSpan.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Failed to fetch cryptocurrency prices:", error);
+                // Display error message to the user
+                errorTextSpan.textContent = `Failed to fetch data: ${error.message}. Please check your internet connection or try again later.`;
+                errorMessageDiv.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden'); // Hide loading even on error
+            }
+        }
+
+        // Add event listener to the refresh button
+        refreshButton.addEventListener('click', fetchCryptoPrices);
+
+        // Fetch prices when the page loads
+        document.addEventListener('DOMContentLoaded', fetchCryptoPrices);
+    </script>
+</body>
+</html>
