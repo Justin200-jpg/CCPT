@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Price Tracker</title>
+    <title>Advanced Crypto Price Tracker</title>
     <!--
         Load Tailwind CSS from CDN for modern, responsive styling.
         Tailwind provides utility classes to rapidly build UI components.
@@ -60,12 +60,30 @@
     <!-- Main Content Area -->
     <main class="container mx-auto px-4 py-8 flex-grow">
         <div class="bg-white p-6 md:p-8 rounded-xl shadow-lg mb-6">
-            <div class="flex justify-between items-center mb-4">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
                 <h2 class="text-2xl font-bold text-gray-800">Top Cryptocurrencies</h2>
-                <button id="refreshButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
-                    Refresh Prices
-                </button>
+                <div class="flex items-center gap-2">
+                    <label for="currencySelect" class="text-gray-700 font-medium">Display in:</label>
+                    <select id="currencySelect" class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="usd">USD</option>
+                        <option value="eur">EUR</option>
+                        <option value="gbp">GBP</option>
+                        <option value="jpy">JPY</option>
+                        <option value="aud">AUD</option>
+                        <option value="cad">CAD</option>
+                        <option value="chf">CHF</option>
+                        <option value="cny">CNY</option>
+                        <option value="inr">INR</option>
+                        <option value="krw">KRW</option>
+                    </select>
+                    <button id="refreshButton" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-full shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
+                        Refresh
+                    </button>
+                </div>
             </div>
+
+            <!-- Auto-refresh indicator -->
+            <p id="autoRefreshInfo" class="text-sm text-gray-500 text-center mb-4">Auto-refreshing every 60 seconds...</p>
 
             <!-- Loading Indicator -->
             <div id="loadingIndicator" class="text-center py-8">
@@ -74,7 +92,7 @@
             </div>
 
             <!-- Cryptocurrency List/Cards -->
-            <div id="cryptoList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+            <div id="cryptoList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 hidden">
                 <!-- Crypto cards will be injected here by JavaScript -->
             </div>
 
@@ -106,10 +124,11 @@
         const errorMessageDiv = document.getElementById('errorMessage');
         const errorTextSpan = document.getElementById('errorText');
         const refreshButton = document.getElementById('refreshButton');
+        const currencySelect = document.getElementById('currencySelect');
+        const autoRefreshInfo = document.getElementById('autoRefreshInfo');
 
-        // Define the cryptocurrencies we want to track
+        // Define the cryptocurrencies we want to track (60 coins)
         // The 'ids' correspond to CoinGecko's internal IDs for these coins.
-        // I've expanded this list significantly!
         const cryptoIds = [
             'bitcoin', 'ethereum', 'ripple', 'litecoin', 'cardano',
             'solana', 'dogecoin', 'polkadot', 'chainlink', 'polygon',
@@ -121,13 +140,39 @@
             'wrapped-bitcoin', 'binance-usd', 'algorand', 'fantom', 'eos',
             'dash', 'zcash', 'neo', 'iota', 'nem',
             'qtum', 'ontology', 'waves', 'chiliz', 'theta-token',
-            'pancakeswap-token', 'sushi', 'curve-dao-token', 'yearn-finance', 'basic-attention-token'
+            'pancakeswap-token', 'sushi', 'curve-dao-token', 'yearn-finance', 'basic-attention-token',
+            'arbitrum', 'optimism', 'render-token', 'injective-protocol', 'aptos',
+            'sui', 'pepe', 'floki', 'the-graph', 'immutable-x' // Added 10 more to make it 60
         ];
-        const vsCurrency = 'usd'; // The currency to compare against
 
-        // CoinGecko API endpoint for simple price data
-        // include_24hr_change and include_24hr_vol are optional parameters for more data
-        const API_URL = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoIds.join(',')}&vs_currencies=${vsCurrency}&include_24hr_change=true&include_24hr_vol=true`;
+        let vsCurrency = currencySelect.value; // Get initial currency from dropdown
+        const refreshIntervalSeconds = 60; // Auto-refresh every 60 seconds
+        let autoRefreshTimer; // Variable to hold the setInterval ID
+
+        /**
+         * Formats a number as currency.
+         * @param {number} value - The number to format.
+         * @param {string} currencyCode - The 3-letter currency code (e.g., 'usd').
+         * @returns {string} Formatted currency string.
+         */
+        function formatCurrency(value, currencyCode) {
+            if (value === null || typeof value === 'undefined') {
+                return 'N/A';
+            }
+            return value.toLocaleString(undefined, { style: 'currency', currency: currencyCode.toUpperCase(), maximumFractionDigits: 2 });
+        }
+
+        /**
+         * Formats a number as a percentage.
+         * @param {number} value - The number to format.
+         * @returns {string} Formatted percentage string.
+         */
+        function formatPercentage(value) {
+            if (value === null || typeof value === 'undefined') {
+                return 'N/A';
+            }
+            return value.toFixed(2) + '%';
+        }
 
         /**
          * Fetches cryptocurrency data from the CoinGecko API and updates the UI.
@@ -140,14 +185,17 @@
             errorMessageDiv.classList.add('hidden');
             cryptoListDiv.innerHTML = ''; // Clear previous crypto cards
 
+            // Construct the API URL with all required parameters
+            const API_URL = `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoIds.join(',')}&vs_currencies=${vsCurrency}&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true&include_24hr_high_low=true&precision=2`;
+
             try {
                 // Fetch data from the API
                 const response = await fetch(API_URL);
 
                 // Check if the response was successful (status code 200-299)
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(`API error: ${response.status} ${response.statusText} - ${errorData.error || 'Unknown error'}`);
+                    const errorData = await response.json().catch(() => ({})); // Try to parse error, but don't fail if it's not JSON
+                    throw new Error(`API error: ${response.status} ${response.statusText} - ${errorData.error || 'Could not parse error message.'}`);
                 }
 
                 // Parse the JSON response
@@ -162,26 +210,27 @@
                 cryptoIds.forEach(id => {
                     const cryptoData = data[id];
                     if (cryptoData) {
-                        const price = cryptoData[vsCurrency];
+                        const currentPrice = cryptoData[vsCurrency];
                         const change24h = cryptoData[`${vsCurrency}_24h_change`];
                         const volume24h = cryptoData[`${vsCurrency}_24h_vol`];
+                        const marketCap = cryptoData[`${vsCurrency}_market_cap`];
+                        const high24h = cryptoData[`${vsCurrency}_24h_high`];
+                        const low24h = cryptoData[`${vsCurrency}_24h_low`];
 
                         // Determine color for price change
                         const changeClass = change24h >= 0 ? 'price-change-positive' : 'price-change-negative';
                         const changeArrow = change24h >= 0 ? '▲' : '▼'; // Up or down arrow
 
-                        // Format numbers for display
-                        const formattedPrice = price.toLocaleString(undefined, { style: 'currency', currency: vsCurrency.toUpperCase() });
-                        const formattedChange = change24h ? `${changeArrow} ${Math.abs(change24h).toFixed(2)}%` : 'N/A';
-                        const formattedVolume = volume24h ? volume24h.toLocaleString(undefined, { style: 'currency', currency: vsCurrency.toUpperCase(), maximumFractionDigits: 0 }) : 'N/A';
-
                         // Create the HTML for a crypto card
                         const cryptoCard = `
                             <div class="bg-gray-50 p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-300">
-                                <h3 class="text-xl font-semibold text-purple-700 mb-2 capitalize">${id} (${id.substring(0, 3).toUpperCase()})</h3>
-                                <p class="text-3xl font-bold text-gray-900 mb-2">${formattedPrice}</p>
-                                <p class="text-sm ${changeClass} font-medium mb-1">24h Change: ${formattedChange}</p>
-                                <p class="text-sm text-gray-600">24h Volume: ${formattedVolume}</p>
+                                <h3 class="text-xl font-semibold text-purple-700 mb-2 capitalize">${id.replace(/-/g, ' ')} (${id.substring(0, 3).toUpperCase()})</h3>
+                                <p class="text-3xl font-bold text-gray-900 mb-2">${formatCurrency(currentPrice, vsCurrency)}</p>
+                                <p class="text-sm ${changeClass} font-medium mb-1">24h Change: ${change24h ? `${changeArrow} ${formatPercentage(Math.abs(change24h))}` : 'N/A'}</p>
+                                <p class="text-sm text-gray-600 mb-1">Market Cap: ${formatCurrency(marketCap, vsCurrency)}</p>
+                                <p class="text-sm text-gray-600 mb-1">24h High: ${formatCurrency(high24h, vsCurrency)}</p>
+                                <p class="text-sm text-gray-600">24h Low: ${formatCurrency(low24h, vsCurrency)}</p>
+                                <p class="text-xs text-gray-500 mt-2">Volume (24h): ${formatCurrency(volume24h, vsCurrency)}</p>
                             </div>
                         `;
                         cryptoListDiv.innerHTML += cryptoCard;
@@ -208,11 +257,38 @@
             }
         }
 
-        // Add event listener to the refresh button
-        refreshButton.addEventListener('click', fetchCryptoPrices);
+        /**
+         * Starts the automatic refresh timer.
+         */
+        function startAutoRefresh() {
+            // Clear any existing timer to prevent multiple intervals running
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+            }
+            // Set a new interval to fetch prices periodically
+            autoRefreshTimer = setInterval(fetchCryptoPrices, refreshIntervalSeconds * 1000);
+        }
 
-        // Fetch prices when the page loads
-        document.addEventListener('DOMContentLoaded', fetchCryptoPrices);
+        // --- Event Listeners and Initial Load ---
+
+        // Add event listener to the refresh button
+        refreshButton.addEventListener('click', () => {
+            fetchCryptoPrices();
+            startAutoRefresh(); // Restart timer on manual refresh
+        });
+
+        // Add event listener for currency selection change
+        currencySelect.addEventListener('change', (event) => {
+            vsCurrency = event.target.value; // Update the currency
+            fetchCryptoPrices(); // Fetch prices with new currency
+            startAutoRefresh(); // Restart timer on currency change
+        });
+
+        // Fetch prices when the page loads for the first time
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchCryptoPrices();
+            startAutoRefresh(); // Start auto-refresh after initial load
+        });
     </script>
 </body>
 </html>
