@@ -1,6 +1,9 @@
 # CCPT
 Crypto Currency Price Tracker
-2025 All rights reserved to Liapard Development Team
+2025 All rights reserved to LDT liapard
 Copying any of this tools will result a DCMA report.
 
-Visit ! ! ! https://justin200-jpg.github.io/CCPT/
+
+We dont work on this anymore
+
+Visit ! ! ! https://google.com/ 
